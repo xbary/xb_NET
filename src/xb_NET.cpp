@@ -9,6 +9,7 @@
 #ifdef XB_WIFI
 #include <xb_WIFI.h>
 #include <WiFi.h>
+
 #endif
 
 #include <xb_board.h>
@@ -30,7 +31,7 @@ DEFLIST_VAR(TSocket, SocketList)
 #pragma region KONFIGURACJE
 bool NET_Start = true;
 bool NET_ShowDebug = false;
-bool NET_ShowRaport = false;
+bool NET_ShowRaport = true;
 uint32_t NET_TickAfterWhichToCheckInternetAvailability = 5000;
 uint32_t NET_SocketRXinitbufsize = 1472;
 uint32_t NET_SocketTXinitbufsize = 1472;
@@ -44,9 +45,9 @@ bool NET_LoadConfig()
 #ifdef XB_PREFERENCES
 	if (board.PREFERENCES_BeginSection("NET"))
 	{
-		NET_Start = board.PREFERENCES_GetBool("START", false);
-		NET_ShowDebug = board.PREFERENCES_GetBool("SD", false);
-		NET_ShowRaport = board.PREFERENCES_GetBool("SR", false);
+		NET_Start = board.PREFERENCES_GetBool("START", NET_Start);
+		NET_ShowDebug = board.PREFERENCES_GetBool("SD", NET_ShowDebug);
+		NET_ShowRaport = board.PREFERENCES_GetBool("SR", NET_ShowRaport);
 		NET_TickAfterWhichToCheckInternetAvailability = board.PREFERENCES_GetUINT32("TAWTCIA", NET_TickAfterWhichToCheckInternetAvailability);
 		NET_SocketRXinitbufsize = board.PREFERENCES_GetUINT32("TSRIBS", NET_SocketRXinitbufsize);
 		NET_SocketTXinitbufsize = board.PREFERENCES_GetUINT32("TSTIBS", NET_SocketTXinitbufsize);
@@ -1105,6 +1106,63 @@ uint32_t XB_NET_DoLoop()
 			NET_FunctionStep = ifsHandleSocket;
 			LastRWtoInternetSocket = SysTickCount;
 			LastRWtoNetSocket = SysTickCount;
+#ifdef XB_WIFI
+#ifdef XB__OTA
+			board.Log("OTA Init", true, true);
+			board.Log('.');
+			ArduinoOTA.setPort(CFG_WIFI_PORTOTA);
+			board.Log('.');
+			ArduinoOTA.setHostname(board.DeviceName.c_str());
+			board.Log('.');
+			if (CFG_WIFI_PSWOTA != "")
+			{
+				ArduinoOTA.setPassword(CFG_WIFI_PSWOTA.c_str());
+			}
+			board.Log('.');
+
+
+			//#if !defined(_VMICRO_INTELLISENSE)
+			ArduinoOTA.onStart([](void) {
+				board.SendMessage_OTAUpdateStarted();
+				String type;
+				if (ArduinoOTA.getCommand() == U_FLASH)
+					type = "sketch";
+				else
+					type = "filesystem";
+
+				board.Log(String("\n\n[WIFI] Start updating " + type).c_str());
+				});
+
+			board.Log('.');
+			ArduinoOTA.onEnd([](void) {
+				board.Log("\n\rEnd");
+				});
+
+			board.Log('.');
+			ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+				board.Blink_RX();
+				board.Blink_TX();
+				board.Blink_Life();
+				board.Log('.');
+				});
+
+			board.Log('.');
+			ArduinoOTA.onError([](ota_error_t error) {
+				Serial.printf(("Error[%u]: "), error);
+				if (error == OTA_AUTH_ERROR) Serial.println(("Auth Failed"));
+				else if (error == OTA_BEGIN_ERROR) Serial.println(("Begin Failed"));
+				else if (error == OTA_CONNECT_ERROR) Serial.println(("Connect Failed"));
+				else if (error == OTA_RECEIVE_ERROR) Serial.println(("Receive Failed"));
+				else if (error == OTA_END_ERROR) Serial.println(("End Failed"));
+				});
+			//#endif
+			board.Log('.');
+			ArduinoOTA.begin();
+			board.Log('.');
+			board.Log(("OK"));
+#endif
+#endif
+
 		}
 		
 		CheckNetAvaliable();
