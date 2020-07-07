@@ -855,7 +855,7 @@ bool CheckNetAvaliable()
 		if (WiFi.status() == WL_CONNECTED)
 #endif
 #ifdef XB_ETH
-		if (NETStatus == nsConnect)
+		if ((Ethernet.hardwareStatus() != EthernetNoHardware) && (Ethernet.linkStatus() == LinkON))
 #endif
 		{
 			if (NET_ShowDebug) board.Log("Check Net avaliable..", true, true);
@@ -865,7 +865,15 @@ bool CheckNetAvaliable()
 			if (true)//(client.connect(CFG_WIFI_GATEWAY_IP, 80, 1200))
 #endif
 #ifdef XB_ETH
-			if (client.connect(ETH_Gateway, 80))
+			client.setConnectionTimeout(500);
+			int v = client.connect(ETH_Gateway, 80);
+			if (v == 0)
+			{
+				delay(500);
+				v = client.connect(ETH_Gateway, 80);
+			}
+			if (NET_ShowDebug) board.Log(String("."+String(v)).c_str());
+			if (v!=0)
 #endif
 			{
 				client.stop();
@@ -878,10 +886,12 @@ bool CheckNetAvaliable()
 				if (NET_ShowDebug) board.Log(".Disconnect");
 				NET_Disconnect();
 				INTERNET_Disconnect();
+				result = false;
 			}
 		} 
 		else
 		{
+			NET_Disconnect();
 			INTERNET_Disconnect();
 		}
 
@@ -1185,7 +1195,8 @@ uint32_t XB_NET_DoLoop()
 		}
 
 		// --- Sprawdzenie dostêpnoœci sieci
-		if (!CheckNetAvaliable()) break;
+		CheckNetAvaliable();
+		//if (!CheckNetAvaliable()) break;
 		CheckInternetAvaliable();
 
 
@@ -1769,9 +1780,15 @@ uint32_t XB_NET_DoLoop()
 						size_t sizesend = 0;
 						if (NET_CurrentSocket->ServerUDP->beginPacket(NET_CurrentSocket->RemoteIP, NET_CurrentSocket->RemotePort) != 0)
 						{
+							NET_CurrentSocket->ServerUDP->setTimeout(10);
 							sizesend = NET_CurrentSocket->ServerUDP->write(buf, sizetosend);
 							NET_CurrentSocket->ServerUDP->endPacket();
+						} 
+						else
+						{
+							board.Log("UDP Begin packet error...", true, true, tlError);
 						}
+
 						if (sizesend > 0)
 						{
 							NET_CurrentSocket->TX_SendBytes += sizesend;
