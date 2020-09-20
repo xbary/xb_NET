@@ -35,8 +35,8 @@ bool NET_ShowRaport = true;
 uint32_t NET_TickAfterWhichToCheckInternetAvailability = 5000;
 uint32_t NET_SocketRXinitbufsize = 1472;
 uint32_t NET_SocketTXinitbufsize = 1472;
-uint32_t NET_BufGranulation = 64;
-uint32_t NET_TickRememberBuffer = 5000;
+uint32_t NET_BufGranulation = 512;
+uint32_t NET_TickRememberBuffer = 2000;
 IPAddress NET_InternetIPCheck(172, 217, 20, 164);
 uint16_t NET_InternetPortCheck = 80;
 
@@ -200,6 +200,7 @@ TSocket* NET_CreateSocket()
 	socket->TickCreate = SysTickCount;
 	socket->Client = NULL;
 	socket->Server = NULL;
+	socket->ServerUDP = NULL;
 	socket->OutCreate = false;
 	socket->AutoConnect = false;
 
@@ -241,13 +242,17 @@ TSocketResult NET_DestroySocket(TSocket** SocketHandle)
 				{
 					if (s->Type == tsUDPClient)
 					{
-						if (s->ServerUDP == (*SocketHandle)->ServerUDP)
+						if (s != (*SocketHandle))
 						{
-							if (s->OutCreate == true)
+							if (s->ServerUDP == (*SocketHandle)->ServerUDP)
 							{
-								NET_SendMessage_Event(s, tsaDisconnect);
-								NET_DestroySocket(&s);
-								s = SocketList_last;
+								if (s->OutCreate == true)
+								{
+									NET_SendMessage_Event(s, tsaDisconnect);
+									NET_DestroySocket(&s);
+									s = SocketList_last;
+									continue;
+								}
 							}
 						}
 					}
@@ -969,16 +974,39 @@ void SetLastTickRWNet(TSocket* SocketHandle)
 //==========================================================================================
 bool SetCurrentSocket_Disconnect()
 {
-	NET_CurrentSocket->Status = sDisconnect;
-	BUFFER_Reset(&NET_CurrentSocket->TX_Buf);
-	BUFFER_Reset(&NET_CurrentSocket->RX_Buf);
-	NET_SendMessage_Event(NET_CurrentSocket, tsaDisconnect);
-	if (NET_CurrentSocket == NULL) return true;
-	if (NET_CurrentSocket->Client != NULL)
+	if (NET_CurrentSocket != NULL)
 	{
-		NET_CurrentSocket->Client->stop();
+		BUFFER_Reset(&NET_CurrentSocket->TX_Buf);
+		BUFFER_Reset(&NET_CurrentSocket->RX_Buf);
+		if (NET_CurrentSocket->Type == tsTCPClient)
+		{
+			NET_CurrentSocket->Status = sDisconnect;
+			NET_SendMessage_Event(NET_CurrentSocket, tsaDisconnect);
+		}
+		else if (NET_CurrentSocket->Type == tsTCPServer)
+		{
+			NET_CurrentSocket->Status = sStopedServer;
+			NET_SendMessage_Event(NET_CurrentSocket, tsaServerStop);
+		}
+		else if (NET_CurrentSocket->Type == tsUDPServer)
+		{
+			NET_CurrentSocket->Status = sStopedServer;
+			NET_SendMessage_Event(NET_CurrentSocket, tsaServerStop);
+		}
+		else if (NET_CurrentSocket->Type == tsUDPClient)
+		{
+			NET_CurrentSocket->Status = sDisconnect;
+			NET_SendMessage_Event(NET_CurrentSocket, tsaDisconnect);
+		}
+
+		
+		if (NET_CurrentSocket == NULL) return true;
+		if (NET_CurrentSocket->Client != NULL)
+		{
+			NET_CurrentSocket->Client->stop();
+		}
+		NET_RepaintSocket(NET_CurrentSocket);
 	}
-	NET_RepaintSocket(NET_CurrentSocket);
 	return false;
 }
 //-------------------------------------------------------------------------------------------------------------
@@ -1324,7 +1352,7 @@ uint32_t XB_NET_DoLoop()
 				}
 				else if (NET_CurrentSocket->Status == sStopedServer)
 				{
-
+					NET_CurrentSocket->Status = sStartingServer;
 				}
 			}
 			break;
@@ -1762,7 +1790,7 @@ uint32_t XB_NET_DoLoop()
 				}
 				else if (NET_CurrentSocket->Status == sStopedServer)
 				{
-
+					NET_CurrentSocket->Status = sStartingServer;
 				}
 			}
 			break;
@@ -1875,6 +1903,8 @@ void NET_SocketClientsDrawCaption(TWindowClass *Awh,Ty &Ay)
 	Awh->PutStr("Remote IP", 16, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr("Remote Port", 11, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr("Local Port", 10, ' ', taLeft); Awh->PutChar('|');
+	Awh->PutStr("MLTX", 8, ' ', taLeft); Awh->PutChar('|');
+	Awh->PutStr("MLRX", 8, ' ', taLeft); Awh->PutChar('|');
 	Ay++;
 }
 
@@ -1900,6 +1930,8 @@ void NET_SocketClientDraw(TWindowClass* Awh, TSocket* As, Ty &Ay)
 			{
 				Awh->PutStr("x", 10, ' ', taCentre); Awh->PutChar('|');
 			}
+			Awh->PutStr(String(As->TX_Buf.MaxLength).c_str(), 8, ' ', taCentre); Awh->PutChar('|');
+			Awh->PutStr(String(As->RX_Buf.MaxLength).c_str(), 8, ' ', taCentre); Awh->PutChar('|');
 		}
 		As->Repaint = 0;
 	}
@@ -1968,6 +2000,9 @@ void NET_SocketClientsUDPDrawCaption(TWindowClass* Awh, Ty& Ay)
 	Awh->PutStr("Remote Port", 11, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr("Local Port", 10, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr("Local IP", 16, ' ', taLeft); Awh->PutChar('|');
+	Awh->PutStr("MLTX", 8, ' ', taLeft); Awh->PutChar('|');
+	Awh->PutStr("MLRX", 8, ' ', taLeft); Awh->PutChar('|');
+
 	Ay++;
 }
 
@@ -1987,6 +2022,9 @@ void NET_SocketClientUDPDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 			Awh->PutStr(String(As->RemotePort).c_str(), 11, ' ', taCentre); Awh->PutChar('>');
 			Awh->PutStr(String(As->ServerUDPPort).c_str(), 10, ' ', taCentre); Awh->PutChar('|');
 			Awh->PutStr(As->ServerUDPIP.toString().c_str(), 16, ' ', taCentre); Awh->PutChar('|');
+			Awh->PutStr(String(As->TX_Buf.MaxLength).c_str(), 8, ' ', taCentre); Awh->PutChar('|');
+			Awh->PutStr(String(As->RX_Buf.MaxLength).c_str(), 8, ' ', taCentre); Awh->PutChar('|');
+
 		}
 		As->Repaint = 0;
 	}
