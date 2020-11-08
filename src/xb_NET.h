@@ -15,17 +15,20 @@
 #ifdef XB_WIFI
 #include <xb_WIFI.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <ssl_client.h>
 
 #define CLIENT_TCP WiFiClient
 #define SERVER_TCP WiFiServer
 #define SERVER_UDP WiFiUDP
+#define CLIENT_SSL_TCP WiFiClientSecure
 
 #endif
 
 typedef enum { isDisconnect, isConnect } TINTERNETStatus;
 
 
-enum TTypeSocket { tsTCPClient, tsTCPServer, tsUDPServer,tsUDPClient };
+enum TTypeSocket { tsTCPClient, tsTCPServer, tsUDPServer,tsUDPClient, tsTCPClientSecure};
 enum TSocketStatus { 
 	sConnect, 
 	sDisconnect, 
@@ -59,20 +62,24 @@ struct TSocket {
 	SERVER_UDP* ServerUDP;
 	IPAddress ServerUDPIP;
 	uint16_t ServerUDPPort;
+	CLIENT_SSL_TCP* ClientSecure;
+	const char* Root_CA;
 	bool OutCreate;
 	TTypeSocket Type;
 	TSocketStatus Status;
+	TSocketData SocketDataAction;
 #ifdef XB_GUI
 	int8_t Repaint;
 #endif
 };
 
-enum TSocketResult {srOK,srERROR, srErrorCreateSocket,srErrorConnect};
+enum TSocketResult {srOK,srERROR, srErrorCreateSocket,srErrorConnect, srErrorNotConnect,srNoHTTPResponse,srErrorHTTPStructure};
 
 
 extern TINTERNETStatus INTERNETStatus;
 
 TSocketResult NET_DestroySocket(TSocket** SocketHandle);
+TSocketResult NET_CreateTCPClientSecure(TSocket** SocketHandle, CLIENT_SSL_TCP* Aclient_ssl, String Aremotehostname, uint16_t Aremoteport, const char* Aroot_ca);
 TSocketResult NET_CreateTCPClient(TSocket** SocketHandle, CLIENT_TCP* Aclient = NULL, IPAddress Aremoteip = { 0,0,0,0 }, uint16_t Aremoteport = 0);
 TSocketResult NET_CreateTCPClient(TSocket** SocketHandle, CLIENT_TCP* Aclient = NULL, String Aremotehostname=String(""), uint16_t Aremoteport = 0);
 TSocketResult NET_CreateTCPServer(TSocket** SocketHandle, SERVER_TCP* Aserver, uint16_t Aport);
@@ -81,11 +88,25 @@ TSocketResult NET_CreateUDPClient(TSocket** SocketHandle, SERVER_UDP* Aserver, u
 TSocketResult NET_CreateUDPServer(TSocket** SocketHandle, SERVER_UDP* Aserver, uint16_t Aport);
 TSocketResult NET_StartUDPServer(TSocket* SocketHandle);
 int NET_Write(TSocket* SocketHandle, uint8_t Avalue);
-int NET_Write(TSocket* SocketHandle, uint8_t* Avaluebuf, int Asizebuf);
+int NET_Write(TSocket* SocketHandle, uint8_t* Avaluebuf, int Asizebuf, char Aendch = 0);
 int NET_Read(TSocket* SocketHandle, uint8_t* Avalue);
 int NET_Read(TSocket* SocketHandle, uint8_t* Avalues, int Amaxreadsize);
 bool NET_SendMessage_Event(TSocket* Asocket, TTypeSocketAction Atypesocketaction, TSocket* ANewClientSocket = NULL);
+
+struct TNET_HTTP_RESPONSE
+{
+	uint16_t HttpCode;
+	uint32_t ContentLength;
+	String Cookies;
+	String Headers;
+	String Body;
+};
+
+TSocketResult NET_HTTP_GET(TSocket* SocketHandle, String Apath, String Aparams, char* Acookies = NULL);
+TSocketResult NET_HTTP_POST(TSocket* SocketHandle, String Apath, String Aparams, char* Acookies = NULL);
+
 int NET_flushTX(TSocket* SocketHandle);
+IPAddress NET_GetLocalIPAddress();
 
 #ifdef XB_GUI
 void NET_CloseNetworkRaportWindow();
