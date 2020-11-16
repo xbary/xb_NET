@@ -123,6 +123,7 @@ String NET_GetString_TypeSocket(TTypeSocket Ats)
 		GET_ENUMSTRING(tsUDPServer, 2);
 		GET_ENUMSTRING(tsTCPClientSecure, 2);
 	}
+	return "No ident Enum";
 }
 //-------------------------------------------------------------------------------------------------------------
 String NET_GetString_StatusSocket(TSocketStatus Ass)
@@ -138,6 +139,7 @@ String NET_GetString_StatusSocket(TSocketStatus Ass)
 		GET_ENUMSTRING(sStopedServer, 1);
 		GET_ENUMSTRING(sDestroy, 1);
 	}
+	return "No ident Enum";
 }
 //-------------------------------------------------------------------------------------------------------------
 String NET_GetString_SocketResult(TSocketResult Asr)
@@ -152,6 +154,7 @@ String NET_GetString_SocketResult(TSocketResult Asr)
 		GET_ENUMSTRING(srNoHTTPResponse, 2);
 		GET_ENUMSTRING(srErrorHTTPStructure, 2);
 	}
+	return "No ident Enum";
 }
 //-------------------------------------------------------------------------------------------------------------
 void NET_RepaintSocket(TSocket* Asocket)
