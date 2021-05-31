@@ -10,6 +10,8 @@
 #define CLIENT_TCP EthernetClient
 #define SERVER_TCP EthernetServer
 #define SERVER_UDP EthernetUDP
+#define CLIENT_SSL_TCP EthernetClient
+
 #endif
 
 #ifdef XB_WIFI
@@ -78,7 +80,9 @@ enum TSocketResult {srOK,srERROR, srErrorCreateSocket,srErrorConnect, srErrorNot
 
 extern TINTERNETStatus INTERNETStatus;
 
+String NET_GetString_SocketResult(TSocketResult Asr);
 TSocketResult NET_DestroySocket(TSocket** SocketHandle);
+TSocketResult NET_ResetBuffersInSocket(TSocket** SocketHandle);
 TSocketResult NET_CreateTCPClientSecure(TSocket** SocketHandle, CLIENT_SSL_TCP* Aclient_ssl, String Aremotehostname, uint16_t Aremoteport, const char* Aroot_ca);
 TSocketResult NET_CreateTCPClient(TSocket** SocketHandle, CLIENT_TCP* Aclient = NULL, IPAddress Aremoteip = { 0,0,0,0 }, uint16_t Aremoteport = 0);
 TSocketResult NET_CreateTCPClient(TSocket** SocketHandle, CLIENT_TCP* Aclient = NULL, String Aremotehostname=String(""), uint16_t Aremoteport = 0);
@@ -104,6 +108,8 @@ struct TNET_HTTP_RESPONSE
 
 TSocketResult NET_HTTP_GET(TSocket* SocketHandle, String Apath, String Aparams, char* Acookies = NULL);
 TSocketResult NET_HTTP_POST(TSocket* SocketHandle, String Apath, String Aparams, char* Acookies = NULL);
+TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE** Anhr, bool Areadheaders, bool Areadbody, bool ARxBufferflush);
+void NET_HTTP_RESPONSE_Free(TNET_HTTP_RESPONSE** Anhr);
 
 int NET_flushTX(TSocket* SocketHandle);
 IPAddress NET_GetLocalIPAddress();
@@ -113,6 +119,8 @@ void NET_CloseNetworkRaportWindow();
 void NET_ShowNetworkRaportWindow();
 #endif
 
+extern bool NET_ShowDebug;
+extern const char* test_root_ca;
 extern TTaskDef XB_NET_DefTask;
 
 #endif

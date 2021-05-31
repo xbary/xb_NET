@@ -167,7 +167,7 @@ void NET_RepaintSocket(TSocket* Asocket)
 			if (Asocket != NULL)
 			{
 				Asocket->Repaint++;
-				NET_winHandle0->RepaintDataCounter++;
+				NET_winHandle0->RepaintData();
 			}
 		}
 	}
@@ -191,7 +191,6 @@ void NET_ResizeWindowRaportSocket()
 	}
 #endif
 }
-
 //-------------------------------------------------------------------------------------------------------------
 TSocket* NET_CreateSocket()
 {
@@ -297,10 +296,25 @@ TSocketResult NET_DestroySocket(TSocket** SocketHandle)
 		BUFFER_Reset(&(*SocketHandle)->RX_Buf);
 		BUFFER_Reset(&(*SocketHandle)->TX_Buf);
 
+		(*SocketHandle)->RemoteHostName.~String();
 		DESTROY_STR_DEL_FROM_LIST(SocketList, (*SocketHandle));
 		NET_ResizeWindowRaportSocket();
 	}
 	return srOK;
+}
+//-------------------------------------------------------------------------------------------------------------
+TSocketResult NET_ResetBuffersInSocket(TSocket** SocketHandle)
+{
+	if (SocketHandle != NULL)
+	{
+		if (*SocketHandle != NULL)
+		{
+			BUFFER_Reset(&(*SocketHandle)->RX_Buf);
+			BUFFER_Reset(&(*SocketHandle)->TX_Buf);
+			return srOK;
+		}
+	}
+	return srERROR;
 }
 //-------------------------------------------------------------------------------------------------------------
 TSocketResult NET_CreateTCPClientSecure(TSocket** SocketHandle, CLIENT_SSL_TCP* Aclient_ssl, String Aremotehostname, uint16_t Aremoteport, const char* Aroot_ca)
@@ -350,16 +364,22 @@ TSocketResult NET_CreateTCPClientSecure(TSocket** SocketHandle, CLIENT_SSL_TCP* 
 	{
 		socket->OutCreate = true;
 		socket->ClientSecure = Aclient_ssl;
-		socket->RemoteIP = socket->Client->remoteIP();
-		socket->RemotePort = socket->Client->remotePort();
+		socket->RemoteIP = socket->ClientSecure->remoteIP();
+		socket->RemotePort = socket->ClientSecure->remotePort();
 	}
 	else
 	{
 		socket->OutCreate = false;
-		if (socket->ClientSecure == NULL)
+
+		if (socket->ClientSecure != NULL)
+		{
+			socket->ClientSecure->stop();
+		}
+		else
 		{
 			socket->ClientSecure = new CLIENT_SSL_TCP();
 		}
+
 		socket->RemoteHostName = Aremotehostname;
 		socket->RemoteIP = (uint32_t)0;
 		socket->RemotePort = Aremoteport;
@@ -425,7 +445,14 @@ TSocketResult NET_CreateTCPClient(TSocket** SocketHandle,CLIENT_TCP* Aclient, IP
 	else
 	{
 		socket->OutCreate = false;
-		socket->Client = new CLIENT_TCP();
+		if (socket->Client != NULL)
+		{
+			socket->Client->stop();
+		}
+		else
+		{
+			socket->Client = new CLIENT_TCP();
+		}
 		socket->RemoteHostName = "";
 		socket->RemoteIP = Aremoteip;
 		socket->RemotePort = Aremoteport;
@@ -489,7 +516,14 @@ TSocketResult NET_CreateTCPClient(TSocket** SocketHandle, CLIENT_TCP* Aclient, S
 	else
 	{
 		socket->OutCreate = false;
-		socket->Client = new CLIENT_TCP();
+		if (socket->Client != NULL)
+		{
+			socket->Client->stop();
+		}
+		else
+		{
+			socket->Client = new CLIENT_TCP();
+		}
 		socket->RemoteHostName = Aremotehostname;
 		socket->RemoteIP = (uint32_t)0;
 		socket->RemotePort = Aremoteport;
@@ -552,7 +586,17 @@ TSocketResult NET_CreateTCPServer(TSocket** SocketHandle, SERVER_TCP* Aserver, u
 	else
 	{
 		socket->OutCreate = false;
-		socket->Server = new SERVER_TCP(Aport);
+		if (socket->Server != NULL)
+		{
+#ifdef XB_WIFI
+			socket->Server->end();
+#endif
+		}
+		else
+		{
+			socket->Server = new SERVER_TCP(Aport);
+			//
+		}
 		socket->ServerPort = Aport;
 	}
 	*SocketHandle = socket;
@@ -743,7 +787,16 @@ TSocketResult NET_CreateUDPServer(TSocket** SocketHandle, SERVER_UDP* Aserver, u
 	else
 	{
 		socket->OutCreate = false;
-		socket->ServerUDP = new SERVER_UDP();
+
+		if (socket->ServerUDP != NULL)
+		{
+			socket->ServerUDP->stop();
+		}
+		else
+		{
+			socket->ServerUDP = new SERVER_UDP();
+		}
+		
 		socket->ServerUDPPort = Aport;
 #ifdef XB_WIFI
 		socket->ServerUDPIP = CFG_WIFI_StaticIP_IP;
@@ -967,6 +1020,7 @@ TSocketResult NET_HTTP_GET(TSocket* SocketHandle, String Apath, String Aparams,c
 	if (NET_ShowDebug)
 	{
 
+		board.Log("----- BEGIN GET -----", true, true);
 		board.Log("NET_HTTP_GET", true, true);
 		board.Log('\n');
 		uint8_t* dataptr = BUFFER_GetReadPtr(&SocketHandle->TX_Buf);
@@ -978,7 +1032,7 @@ TSocketResult NET_HTTP_GET(TSocket* SocketHandle, String Apath, String Aparams,c
 				board.Log((char)dataptr[i]);
 			}
 		}
-		board.Log("-----END-----", true, true);
+		board.Log("----- END GET -----", true, true);
 	}
 
 
@@ -995,7 +1049,7 @@ TSocketResult NET_HTTP_POST(TSocket* SocketHandle, String Apath, String Aparams,
 	NET_Write(SocketHandle, (uint8_t*)" HTTP/1.1\r\n", -1);
 
 	NET_Write(SocketHandle, (uint8_t*)"Host: ", -1);	NET_Write(SocketHandle, (uint8_t*)SocketHandle->RemoteHostName.c_str(), -1);	NET_Write(SocketHandle, (uint8_t*)"\r\n", -1);
-	NET_Write(SocketHandle, (uint8_t*)"User-Agent: Mozilla/5.0/XBARYOS\r\n", -1);
+	NET_Write(SocketHandle, (uint8_t*)"User-Agent: XBARYOS\r\n", -1);
 	NET_Write(SocketHandle, (uint8_t*)"Content-Type: application/x-www-form-urlencoded\r\n", -1);
 	NET_Write(SocketHandle, (uint8_t*)"cache-control: no-cache\r\n", -1);
 
@@ -1015,6 +1069,7 @@ TSocketResult NET_HTTP_POST(TSocket* SocketHandle, String Apath, String Aparams,
 	if (NET_ShowDebug)
 	{
 
+		board.Log("----- BEGIN POST -----", true, true);
 		board.Log("NET_HTTP_POST", true, true);
 		board.Log('\n');
 		uint8_t *dataptr=BUFFER_GetReadPtr(&SocketHandle->TX_Buf);
@@ -1026,25 +1081,57 @@ TSocketResult NET_HTTP_POST(TSocket* SocketHandle, String Apath, String Aparams,
 				board.Log((char)dataptr[i]);
 			}
 		}
-		board.Log("-----END-----", true, true);
+		board.Log("----- END POST -----", true, true);
 	}
 
 	return srOK;
 }
-
+//-------------------------------------------------------------------------------------------------------------
 TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bool Areadheaders,bool Areadbody,bool ARxBufferflush)
 {
-	if (Ash == NULL) return srERROR;
+	TSocketResult result = srOK;
+
+	if (Ash == NULL)
+	{
+		result = srERROR;
+		if (NET_ShowDebug)
+		{
+			String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+			board.Log(s.c_str(), true, true, tlError);
+		}
+		return result;
+	}
+
 	uint32_t length_response = BUFFER_GetSizeData(&Ash->RX_Buf);
 	if (length_response<9) return srNoHTTPResponse;
 	char *ptr_response = (char* )BUFFER_GetReadPtr(&Ash->RX_Buf);
 
 
-	if (Anhr==NULL) return srERROR;
+	if (Anhr==NULL) 
+	{
+		result = srERROR;
+		if (NET_ShowDebug)
+		{
+			String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+			board.Log(s.c_str(), true, true, tlError);
+		}
+		return result;
+	}
+
 	if (*Anhr == NULL)
 	{
 		*Anhr = (TNET_HTTP_RESPONSE*)board._malloc_psram(sizeof(TNET_HTTP_RESPONSE));
-		if (*Anhr == NULL) return srERROR;
+		if (*Anhr == NULL)
+		{
+			result = srERROR;
+			if (NET_ShowDebug)
+			{
+				String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+				board.Log(s.c_str(), true, true, tlError);
+			}
+			return result;
+		}
+
 		(*Anhr)->Cookies = "";
 	}
 	(*Anhr)->Body = "";
@@ -1061,7 +1148,13 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 		c = xb_memorycompare(&ptr_response[indx_response], (void *)"HTTP/1.1 ");
 		if (c == 0)
 		{
-			return srNoHTTPResponse;
+			result = srNoHTTPResponse;
+			if (NET_ShowDebug)
+			{
+				String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+				board.Log(s.c_str(), true, true, tlError);
+			}
+			return result;
 		}
 		indx_response += c;
 		c = 0;
@@ -1069,7 +1162,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 	else
 	{
 		if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-		return srErrorHTTPStructure;
+
+		{
+			result = srErrorHTTPStructure;
+			if (NET_ShowDebug)
+			{
+				String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+				board.Log(s.c_str(), true, true, tlError);
+			}
+			return result;
+		}
 	}
 
 		
@@ -1085,7 +1187,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 	else
 	{
 		if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-		return srErrorHTTPStructure;
+
+		{
+			result = srErrorHTTPStructure;
+			if (NET_ShowDebug)
+			{
+				String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+				board.Log(s.c_str(), true, true, tlError);
+			}
+			return result;
+		}
 	}
 
 	
@@ -1096,14 +1207,17 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 		c = StringPos(&ptr_response[indx_response],"\r\n", &p);
 		if (c == 0) { if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response); return srNoHTTPResponse; }
 
-
-
 		indx_response += c;
 	}
-	else 
+	else
 	{
-		
-		return srErrorHTTPStructure;
+		result = srErrorHTTPStructure;
+		if (NET_ShowDebug)
+		{
+			String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+			board.Log(s.c_str(), true, true, tlError);
+		}
+		return result;
 	}
 
 	// Wyciêcie Headers
@@ -1124,7 +1238,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 	else
 	{
 		if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-		return srErrorHTTPStructure;
+
+		{
+			result = srErrorHTTPStructure;
+			if (NET_ShowDebug)
+			{
+				String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+				board.Log(s.c_str(), true, true, tlError);
+			}
+			return result;
+		}
 	}
 
 	// Wyszukanie w nag³ówku wielkoœci body
@@ -1147,7 +1270,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 		else
 		{
 			if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-			return srErrorHTTPStructure;
+			
+			{
+				result = srErrorHTTPStructure;
+				if (NET_ShowDebug)
+				{
+					String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+					board.Log(s.c_str(), true, true, tlError);
+				}
+				return result;
+			}
 		}
 	}
 	else
@@ -1166,7 +1298,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 				if (c == 0)
 				{
 					if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-					return srErrorHTTPStructure;
+
+					{
+						result = srErrorHTTPStructure;
+						if (NET_ShowDebug)
+						{
+							String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+							board.Log(s.c_str(), true, true, tlError);
+						}
+						return result;
+					}
 				}
 				indx_response += c+2;
 
@@ -1179,7 +1320,16 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 					else
 					{
 						if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-						return srErrorHTTPStructure;
+
+						{
+							result = srErrorHTTPStructure;
+							if (NET_ShowDebug)
+							{
+								String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+								board.Log(s.c_str(), true, true, tlError);
+							}
+							return result;
+						}
 					}
 				}
 				indx_response += l;
@@ -1191,19 +1341,64 @@ TSocketResult NET_HTTP_PARSE_RESPONSE(TSocket* Ash, TNET_HTTP_RESPONSE **Anhr,bo
 		else
 		{
 			if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
-			return srErrorHTTPStructure;
+
+			{
+				result = srErrorHTTPStructure;
+				if (NET_ShowDebug)
+				{
+					String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+					board.Log(s.c_str(), true, true, tlError);
+				}
+				return result;
+			}
 		}
 	}
-
-	
-
 
 	// Zwolnienie bufora RX
 	if (ARxBufferflush) BUFFER_Readed(&Ash->RX_Buf, length_response);
 
-	return srOK;
-}
 
+	if (NET_ShowDebug)
+	{
+		String s = "NET_HTTP_PARSE_RESPONSE result = " + NET_GetString_SocketResult(result);
+		board.Log(s.c_str(), true, true, tlInfo);
+
+
+		board.Log("HTTP RESPONSE CODE: ", true, true, tlInfo);
+		board.Log(String((*Anhr)->HttpCode).c_str(), false, false, tlWarn);
+		board.Log("HTTP HEADERS:\n", true, true, tlInfo);
+		s = (*Anhr)->Headers;
+		s.replace("\r\n", "\n");
+		board.Log(s.c_str(), false, false, tlWarn);
+
+		board.Log("HTTP RESPONSE ContentLength: ", true, true, tlInfo);
+		board.Log(String((*Anhr)->ContentLength).c_str(), false, false, tlWarn);
+
+		board.Log("HTTP BODY:\n", true, true, tlInfo);
+		s = (*Anhr)->Body;
+		s.replace("\r\n", "\n");
+		board.Log(s.c_str(), false, false, tlWarn);
+	}
+
+	return result;
+}
+//-------------------------------------------------------------------------------------------------------------
+void NET_HTTP_RESPONSE_Free(TNET_HTTP_RESPONSE** Anhr)
+{
+	if (Anhr != NULL)
+	{
+		if (*Anhr != NULL)
+		{
+			(*Anhr)->Body.~String();
+			(*Anhr)->Cookies.~String();
+			(*Anhr)->Headers.~String();
+
+			board.free(*Anhr);
+			*Anhr = NULL;
+		}
+	}
+}
+//-------------------------------------------------------------------------------------------------------------
 
 TSocket* NET_CurrentSocket; // Aktualne obs³ugiwane gniazdo
 uint32_t LastRWtoNetSocket; // Tick ostatniego prawid³owego odczytu/zapisu gniazda w sieci lokalnej
@@ -1329,8 +1524,18 @@ bool CheckInternetAvaliable()
 #endif
 			{
 			CLIENT_TCP client;
+			
 #ifdef XB_WIFI
-			if (client.connect(NET_InternetIPCheck, NET_InternetPortCheck, 1500))
+			bool res=false;
+			if (INTERNETStatus == isConnect)
+			{
+				res = client.connect(NET_InternetIPCheck, NET_InternetPortCheck, 1500);
+			}
+			else
+			{
+					res = client.connect(NET_InternetIPCheck, NET_InternetPortCheck, 250);
+			}
+			if (res)
 #endif
 #ifdef XB_ETH
 			if (client.connect(NET_InternetIPCheck, NET_InternetPortCheck))
@@ -1389,6 +1594,10 @@ void SetLastTickRWNet(TSocket* SocketHandle)
 				LastRWtoInternetSocket = SysTickCount;
 			}
 		}
+		else if (SocketHandle->Type == tsTCPClientSecure)
+		{
+			LastRWtoInternetSocket = SysTickCount;
+		}
 	}
 	return;
 }
@@ -1442,7 +1651,7 @@ bool SetCurrentSocket_Disconnect()
 //-------------------------------------------------------------------------------------------------------------
 int NET_flushTX(TSocket* SocketHandle)
 {
-	if (SocketHandle->Type == tsTCPClient)
+	if ((SocketHandle->Type == tsTCPClient) || (SocketHandle->Type == tsTCPClientSecure))
 	{
 
 		uint32_t TXSize = BUFFER_GetSizeData(&SocketHandle->TX_Buf);
@@ -1463,7 +1672,8 @@ int NET_flushTX(TSocket* SocketHandle)
 				if (availableForWriteCount >= TXSize)
 				{
 					buf = BUFFER_GetReadPtr(&SocketHandle->TX_Buf);
-					TXSended = SocketHandle->Client->write(buf, TXSize);
+					if (SocketHandle->Type == tsTCPClient) TXSended = SocketHandle->Client->write(buf, TXSize);
+					if (SocketHandle->Type == tsTCPClientSecure) TXSended = SocketHandle->ClientSecure->write(buf, TXSize);
 					delay(10);
 					if (TXSended < 0)
 					{
@@ -1494,7 +1704,8 @@ int NET_flushTX(TSocket* SocketHandle)
 				else
 				{
 					buf = BUFFER_GetReadPtr(&SocketHandle->TX_Buf);
-					TXSended = SocketHandle->Client->write(buf, availableForWriteCount);
+					if (SocketHandle->Type == tsTCPClient) TXSended = SocketHandle->Client->write(buf, availableForWriteCount);
+					if (SocketHandle->Type == tsTCPClientSecure) TXSended = SocketHandle->ClientSecure->write(buf, availableForWriteCount);
 					delay(10);
 					if (TXSended < 0)
 					{
@@ -1640,7 +1851,6 @@ uint32_t XB_NET_DoLoop()
 			board.Log(("OK"));
 #endif
 #endif
-
 		}
 		
 		CheckNetAvaliable();
@@ -1680,12 +1890,6 @@ uint32_t XB_NET_DoLoop()
 			// Za³adowanie kolejnego gniazda
 			NET_CurrentSocket = NET_CurrentSocket->Next;
 			// Jeœli niema nastêpnego gniazda to za³adowanie pocz¹tku listy
-			if (NET_CurrentSocket == NULL)
-			{
-				NET_CurrentSocket = SocketList;
-			}
-
-			// Jeœli niema gniazd to opuszczenie pêtli
 			if (NET_CurrentSocket == NULL) break;
 		}
 
@@ -1706,7 +1910,7 @@ uint32_t XB_NET_DoLoop()
 		}
 
 		// Sprawdzenie czy gniazdo jest klientem
-		if ((NET_CurrentSocket->Type == tsTCPClient) || (NET_CurrentSocket->Type == tsUDPClient))
+		if ((NET_CurrentSocket->Type == tsTCPClient) || (NET_CurrentSocket->Type == tsTCPClientSecure) || (NET_CurrentSocket->Type == tsUDPClient))
 		{
 			// Sprawdzenie czy aktuane gniazdo odnosi siê do sieci internet		
 			if (!NET_CheckIPisLAN(NET_CurrentSocket->RemoteIP))
@@ -1716,8 +1920,6 @@ uint32_t XB_NET_DoLoop()
 			}
 		}
 		// ---
-
-
 
 
 		switch (NET_CurrentSocket->Type)
@@ -1745,10 +1947,10 @@ uint32_t XB_NET_DoLoop()
 #ifdef XB_WIFI
 							NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
 							int result = NET_CurrentSocket->ClientSecure->connect(NET_CurrentSocket->RemoteIP, NET_CurrentSocket->RemotePort, 2000);
-							if (result != 1)
+							if (!result)
 #endif
 #ifdef XB_ETH
-							NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
+							//NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
 							int result = NET_CurrentSocket->ClientSecure->connect(NET_CurrentSocket->RemoteIP, NET_CurrentSocket->RemotePort);
 							if (result == 0)
 #endif
@@ -1771,10 +1973,10 @@ uint32_t XB_NET_DoLoop()
 #ifdef XB_WIFI
 							NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
 							int result = NET_CurrentSocket->ClientSecure->connect(NET_CurrentSocket->RemoteHostName.c_str(), NET_CurrentSocket->RemotePort, 2000);
-							if (result != 1)
+							if (!result)
 #endif
 #ifdef XB_ETH
-							NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
+						//	NET_CurrentSocket->ClientSecure->setCACert(NET_CurrentSocket->Root_CA);
 							int result = NET_CurrentSocket->ClientSecure->connect(NET_CurrentSocket->RemoteIP, NET_CurrentSocket->RemotePort);
 							if (result == 0)
 #endif
@@ -1791,8 +1993,11 @@ uint32_t XB_NET_DoLoop()
 								NET_SendMessage_Event(NET_CurrentSocket, tsaConnect);
 								if (NET_CurrentSocket == NULL) break;
 							}
+
+
 						}
 					}
+					break;
 				}
 
 				if (NET_CurrentSocket->Status == sConnect)
@@ -2569,7 +2774,7 @@ uint32_t XB_NET_DoLoop()
 		TSocket* s = SocketList;
 		while (s != NULL)
 		{
-			if (s->Type == tsTCPClient)
+			if ((s->Type == tsTCPClient) || (s->Type == tsTCPClientSecure))
 			{
 				if (s->Status == sConnect)
 				{
@@ -2644,13 +2849,14 @@ void NET_SocketClientsSecureDrawCaption(TWindowClass* Awh, Ty& Ay)
 
 void NET_SocketClientSecureDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 {
-	String str; //str.reserve(64);
+
+	String str; str.reserve(64);
 	Awh->GoToXY(0, Ay);
 	if (As != NULL)
 	{
 		if (As->ClientSecure != NULL)
 		{
-			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
+			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, &str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 			str = NET_GetString_StatusSocket(As->Status); Awh->PutStr(str.c_str(), 10, ' ', taLeft); Awh->PutChar('|');
 			Awh->PutStr(String(As->RX_ReceiveBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
 			Awh->PutStr(String(As->TX_SendBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
@@ -2670,6 +2876,7 @@ void NET_SocketClientSecureDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 		As->Repaint = 0;
 	}
 	Ay++;
+
 }
 
 void NET_SocketClientsDrawCaption(TWindowClass *Awh,Ty &Ay)
@@ -2692,13 +2899,13 @@ void NET_SocketClientsDrawCaption(TWindowClass *Awh,Ty &Ay)
 
 void NET_SocketClientDraw(TWindowClass* Awh, TSocket* As, Ty &Ay)
 {
-	String str; //str.reserve(64);
+	String str; str.reserve(64);
 	Awh->GoToXY(0, Ay);
 	if (As != NULL)
 	{
 		if (As->Client != NULL)
 		{
-			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
+			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, &str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 			str = NET_GetString_StatusSocket(As->Status); Awh->PutStr(str.c_str(), 10, ' ', taLeft); Awh->PutChar('|');
 			Awh->PutStr(String(As->RX_ReceiveBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
 			Awh->PutStr(String(As->TX_SendBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
@@ -2736,7 +2943,7 @@ void NET_SocketServerDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 {
 	String str; str.reserve(64);
 	Awh->GoToXY(0, Ay);
-	str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
+	str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, &str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 	str = NET_GetString_StatusSocket(As->Status); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr(String(As->ServerPort).c_str(), 11, ' ', taCentre); Awh->PutChar('|');
 	Ay++;
@@ -2760,7 +2967,7 @@ void NET_SocketServerUDPDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 {
 	String str; str.reserve(64);
 	Awh->GoToXY(0, Ay);
-	str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
+	str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, &str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 	str = NET_GetString_StatusSocket(As->Status); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 	Awh->PutStr(String(As->ServerUDPPort).c_str(), 11, ' ', taCentre); Awh->PutChar('|');
 	Awh->PutStr(As->ServerUDPIP.toString().c_str(), 16, ' ', taCentre); Awh->PutChar('|');
@@ -2790,13 +2997,13 @@ void NET_SocketClientsUDPDrawCaption(TWindowClass* Awh, Ty& Ay)
 
 void NET_SocketClientUDPDraw(TWindowClass* Awh, TSocket* As, Ty& Ay)
 {
-	String str; //str.reserve(64);
+	String str; str.reserve(64);
 	Awh->GoToXY(0, Ay);
 	if (As != NULL)
 	{
 		if (As->ServerUDP != NULL)
 		{
-			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
+			str = ""; board.SendMessage_GetTaskNameString(As->OwnerTask, &str); Awh->PutStr(str.c_str(), 16, ' ', taLeft); Awh->PutChar('|');
 			str = NET_GetString_StatusSocket(As->Status); Awh->PutStr(str.c_str(), 10, ' ', taLeft); Awh->PutChar('|');
 			Awh->PutStr(String(As->RX_ReceiveBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
 			Awh->PutStr(String(As->TX_SendBytes).c_str(), 10, ' ', taRight); Awh->PutChar('|');
@@ -2820,6 +3027,40 @@ TSocket* testudpserver;
 TSocket* testudpclient;
 uint32_t testSendFrameID;
 TSocket* testtcpclientsecure;
+
+const char* test_root_ca = \
+"-----BEGIN CERTIFICATE-----\n" \
+"MIIFFjCCAv6gAwIBAgIRAJErCErPDBinU/bWLiWnX1owDQYJKoZIhvcNAQELBQAw\n" \
+"TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh\n" \
+"cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMjAwOTA0MDAwMDAw\n" \
+"WhcNMjUwOTE1MTYwMDAwWjAyMQswCQYDVQQGEwJVUzEWMBQGA1UEChMNTGV0J3Mg\n" \
+"RW5jcnlwdDELMAkGA1UEAxMCUjMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK\n" \
+"AoIBAQC7AhUozPaglNMPEuyNVZLD+ILxmaZ6QoinXSaqtSu5xUyxr45r+XXIo9cP\n" \
+"R5QUVTVXjJ6oojkZ9YI8QqlObvU7wy7bjcCwXPNZOOftz2nwWgsbvsCUJCWH+jdx\n" \
+"sxPnHKzhm+/b5DtFUkWWqcFTzjTIUu61ru2P3mBw4qVUq7ZtDpelQDRrK9O8Zutm\n" \
+"NHz6a4uPVymZ+DAXXbpyb/uBxa3Shlg9F8fnCbvxK/eG3MHacV3URuPMrSXBiLxg\n" \
+"Z3Vms/EY96Jc5lP/Ooi2R6X/ExjqmAl3P51T+c8B5fWmcBcUr2Ok/5mzk53cU6cG\n" \
+"/kiFHaFpriV1uxPMUgP17VGhi9sVAgMBAAGjggEIMIIBBDAOBgNVHQ8BAf8EBAMC\n" \
+"AYYwHQYDVR0lBBYwFAYIKwYBBQUHAwIGCCsGAQUFBwMBMBIGA1UdEwEB/wQIMAYB\n" \
+"Af8CAQAwHQYDVR0OBBYEFBQusxe3WFbLrlAJQOYfr52LFMLGMB8GA1UdIwQYMBaA\n" \
+"FHm0WeZ7tuXkAXOACIjIGlj26ZtuMDIGCCsGAQUFBwEBBCYwJDAiBggrBgEFBQcw\n" \
+"AoYWaHR0cDovL3gxLmkubGVuY3Iub3JnLzAnBgNVHR8EIDAeMBygGqAYhhZodHRw\n" \
+"Oi8veDEuYy5sZW5jci5vcmcvMCIGA1UdIAQbMBkwCAYGZ4EMAQIBMA0GCysGAQQB\n" \
+"gt8TAQEBMA0GCSqGSIb3DQEBCwUAA4ICAQCFyk5HPqP3hUSFvNVneLKYY611TR6W\n" \
+"PTNlclQtgaDqw+34IL9fzLdwALduO/ZelN7kIJ+m74uyA+eitRY8kc607TkC53wl\n" \
+"ikfmZW4/RvTZ8M6UK+5UzhK8jCdLuMGYL6KvzXGRSgi3yLgjewQtCPkIVz6D2QQz\n" \
+"CkcheAmCJ8MqyJu5zlzyZMjAvnnAT45tRAxekrsu94sQ4egdRCnbWSDtY7kh+BIm\n" \
+"lJNXoB1lBMEKIq4QDUOXoRgffuDghje1WrG9ML+Hbisq/yFOGwXD9RiX8F6sw6W4\n" \
+"avAuvDszue5L3sz85K+EC4Y/wFVDNvZo4TYXao6Z0f+lQKc0t8DQYzk1OXVu8rp2\n" \
+"yJMC6alLbBfODALZvYH7n7do1AZls4I9d1P4jnkDrQoxB3UqQ9hVl3LEKQ73xF1O\n" \
+"yK5GhDDX8oVfGKF5u+decIsH4YaTw7mP3GFxJSqv3+0lUFJoi5Lc5da149p90Ids\n" \
+"hCExroL1+7mryIkXPeFM5TgO9r0rvZaBFOvV2z0gp35Z0+L4WPlbuEjN/lxPFin+\n" \
+"HlUjr8gRsI3qfJOQFy/9rKIJR0Y/8Omwt/8oTWgy1mdeHmmjk7j1nYsvC9JSQ6Zv\n" \
+"MldlTTKB3zhThV1+XWYp6rjd5JW1zbVWEkLNxE7GJThEUG3szgBVGP7pSWTUTsqX\n" \
+"nLRbwHOoq7hHwg==\n" \
+"-----END CERTIFICATE-----\n";
+
+/*
 const char* test_root_ca = \
 "-----BEGIN CERTIFICATE-----\n" \
 "MIIEkjCCA3qgAwIBAgIQCgFBQgAAAVOFc2oLheynCDANBgkqhkiG9w0BAQsFADA/\n" \
@@ -2848,6 +3089,7 @@ const char* test_root_ca = \
 "PfZ+G6Z6h7mjem0Y+iWlkYcV4PIWL1iwBi8saCbGS5jN2p8M+X+Q7UNKEkROb3N6\n" \
 "KOqkqm57TH2H3eDJAkSnh6/DNFu0Qg==\n" \
 "-----END CERTIFICATE-----\n";
+*/
 TNET_HTTP_RESPONSE *HTTP_RESPONSE=NULL;
 
 bool XB_NET_DoMessage(TMessageBoard* Am)
@@ -3358,6 +3600,7 @@ bool XB_NET_DoMessage(TMessageBoard* Am)
 				CLICK_MENUITEM()
 				{
 					String s="NET_CreateTCPClientSecure result = " + NET_GetString_SocketResult(NET_CreateTCPClientSecure(&testtcpclientsecure,NULL,"msys.hostingasp.pl",443,test_root_ca));
+					testtcpclientsecure->AutoConnect = true;
 					board.Log(s.c_str(), true, true, tlInfo);
 				}
 			}
@@ -3472,5 +3715,3 @@ bool XB_NET_DoMessage(TMessageBoard* Am)
 }
 
 TTaskDef XB_NET_DefTask = {0,&XB_NET_Setup,&XB_NET_DoLoop,&XB_NET_DoMessage};
-
-
